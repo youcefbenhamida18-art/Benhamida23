@@ -132,6 +132,10 @@ class ModelUnavailable(Exception):
     pass
 
 
+class ModelBusy(ModelUnavailable):
+    """Quota/overload on this model for every key: caller should fall back to the next model."""
+
+
 class BadRequest(Exception):
     pass
 
@@ -146,7 +150,7 @@ def gemini_post(model, payload, timeout=240):
         raise RuntimeError("no GEMINI_API_KEY set")
     url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
     last = ""
-    for attempt in range(4):
+    for attempt in range(2):
         for _ in range(len(GEMINI_KEYS)):
             key = GEMINI_KEYS[_key_index % len(GEMINI_KEYS)]
             try:
@@ -164,8 +168,8 @@ def gemini_post(model, payload, timeout=240):
             if r.status_code == 400:
                 raise BadRequest(last)
             _key_index += 1                      # 401/403/429/5xx -> try the next key
-        time.sleep(8 * (attempt + 1))
-    raise RuntimeError("Gemini failed on all keys: " + last)
+        time.sleep(4 * (attempt + 1))
+    raise ModelBusy("busy on all keys: " + last[:200])
 
 
 def llm(prompt, system=None, json_out=False, temperature=1.0, grounded=False):
