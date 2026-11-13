@@ -1,0 +1,82 @@
+name: daily-channel
+
+on:
+  schedule:
+    - cron: "0 5 * * *"        # every day 05:00 UTC; videos are scheduled for US prime time
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: "What to run"
+        type: choice
+        default: full
+        options: [full, dry-run, shorts-only, long-only]
+
+permissions:
+  contents: write              # lets the job commit history.json (avoids repeating ideas)
+
+concurrency:
+  group: channel
+  cancel-in-progress: false
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    timeout-minutes: 150
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: System packages
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ffmpeg fonts-liberation
+
+      - name: Python packages
+        run: pip install requests pillow google-api-python-client google-auth edge-tts
+
+      - name: Make today's videos
+        env:
+          MODE: ${{ inputs.mode }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          GEMINI_API_KEY_2: ${{ secrets.GEMINI_API_KEY_2 }}
+          GEMINI_API_KEY_3: ${{ secrets.GEMINI_API_KEY_3 }}
+          CF_ACCOUNT_ID: ${{ secrets.CF_ACCOUNT_ID }}
+          CF_API_TOKEN: ${{ secrets.CF_API_TOKEN }}
+          PIXABAY_API_KEY: ${{ secrets.PIXABAY_API_KEY }}
+          YT_CLIENT_ID: ${{ secrets.YT_CLIENT_ID }}
+          YT_CLIENT_SECRET: ${{ secrets.YT_CLIENT_SECRET }}
+          YT_REFRESH_TOKEN: ${{ secrets.YT_REFRESH_TOKEN }}
+        run: |
+          case "$MODE" in
+            dry-run)     python channel.py --dry-run ;;
+            shorts-only) python channel.py --only short ;;
+            long-only)   python channel.py --only long ;;
+            *)           python channel.py ;;
+          esac
+
+      - name: Save history
+        if: always()
+        run: |
+          git config user.name "channel-bot"
+          git config user.email "channel-bot@users.noreply.github.com"
+          git add history.json || true
+          git diff --cached --quiet || (git commit -m "update history" && git push)
+
+      - name: Keep scripts and videos from a dry run
+        if: ${{ inputs.mode == 'dry-run' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: dry-run-output
+          path: out/**/final.mp4
+          retention-days: 3
+
+      - name: Keep scripts for debugging
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: debug-scripts
+          path: out/**/script.json
+          retention-days: 3
