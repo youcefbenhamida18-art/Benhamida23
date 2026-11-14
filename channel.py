@@ -2077,4 +2077,4 @@ def card_base(style, w, h, c1, c2, seed=0):
     c1, c2 = np.array(c1, np.float32), np.array(c2, np.float32)
     r = np.sqrt((xx - cx) ** 2 + (yy - cy) ** 2) / math.hypot(cx, cy)
     if style == "burst":
-        t = (np.floor((np.arctan2(yy - cy, xx - cx) + np.pi) / (2 * np) 
+        t = (np.floor((np.arctan2(yy - cy, xx - cx) + np.pi) / (2 * np)) 
