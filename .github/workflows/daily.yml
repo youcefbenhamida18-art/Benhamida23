@@ -2,17 +2,18 @@ name: daily-channel
 
 on:
   schedule:
-    - cron: "0 5 * * *"        # every day 05:00 UTC; videos are scheduled for US prime time
+    - cron: "0 5 * * *"     # main run: 3 shorts + 1 long video
+    - cron: "0 11 * * *"    # catch-up: only fills what is still missing (does nothing when the day is complete)
   workflow_dispatch:
     inputs:
       mode:
         description: "What to run"
         type: choice
         default: full
-        options: [full, dry-run, shorts-only, long-only]
+        options: [full, dry-run, shorts-only, long-only, selftest]
 
 permissions:
-  contents: write              # lets the job commit history.json (avoids repeating ideas)
+  contents: write            # lets the job commit history.json (so ideas never repeat)
 
 concurrency:
   group: channel
@@ -21,21 +22,32 @@ concurrency:
 jobs:
   run:
     runs-on: ubuntu-latest
-    timeout-minutes: 150
+    timeout-minutes: 170
     steps:
       - uses: actions/checkout@v4
 
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
+          cache: pip
+          cache-dependency-path: requirements.txt
 
       - name: System packages
         run: |
           sudo apt-get update
-          sudo apt-get install -y ffmpeg fonts-liberation
+          sudo apt-get install -y ffmpeg fonts-noto-color-emoji fonts-liberation fonts-dejavu-core
+
+      - name: Caption fonts
+        run: |
+          mkdir -p assets/fonts
+          for f in anton/Anton-Regular.ttf poppins/Poppins-ExtraBold.ttf poppins/Poppins-Bold.ttf poppins/Poppins-SemiBold.ttf poppins/Poppins-Regular.ttf; do
+            b=$(basename "$f")
+            [ -s "assets/fonts/$b" ] || curl -fsSL -o "assets/fonts/$b" "https://github.com/google/fonts/raw/main/ofl/$f" || true
+          done
+          ls -la assets/fonts
 
       - name: Python packages
-        run: pip install requests pillow google-api-python-client google-auth edge-tts
+        run: pip install -r requirements.txt
 
       - name: Make today's videos
         env:
@@ -43,17 +55,25 @@ jobs:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           GEMINI_API_KEY_2: ${{ secrets.GEMINI_API_KEY_2 }}
           GEMINI_API_KEY_3: ${{ secrets.GEMINI_API_KEY_3 }}
+          GEMINI_API_KEY_4: ${{ secrets.GEMINI_API_KEY_4 }}
+          GEMINI_API_KEY_5: ${{ secrets.GEMINI_API_KEY_5 }}
           CF_ACCOUNT_ID: ${{ secrets.CF_ACCOUNT_ID }}
           CF_API_TOKEN: ${{ secrets.CF_API_TOKEN }}
           PIXABAY_API_KEY: ${{ secrets.PIXABAY_API_KEY }}
           YT_CLIENT_ID: ${{ secrets.YT_CLIENT_ID }}
           YT_CLIENT_SECRET: ${{ secrets.YT_CLIENT_SECRET }}
           YT_REFRESH_TOKEN: ${{ secrets.YT_REFRESH_TOKEN }}
+          YT_API_KEY: ${{ secrets.YT_API_KEY }}
+          YT_SYNTHETIC: ${{ vars.YT_SYNTHETIC }}
+          PUBLISH_MODE: ${{ vars.PUBLISH_MODE }}
+          CHANNEL_NAME: ${{ vars.CHANNEL_NAME }}
+          USER_MUSIC_SHARE: ${{ vars.USER_MUSIC_SHARE }}
         run: |
           case "$MODE" in
             dry-run)     python channel.py --dry-run ;;
             shorts-only) python channel.py --only short ;;
             long-only)   python channel.py --only long ;;
+            selftest)    OFFLINE_TEST=1 python channel.py --selftest ;;
             *)           python channel.py ;;
           esac
 
@@ -63,20 +83,12 @@ jobs:
           git config user.name "channel-bot"
           git config user.email "channel-bot@users.noreply.github.com"
           git add history.json || true
-          git diff --cached --quiet || (git commit -m "update history" && git push)
+          git diff --cached --quiet || (git commit -m "update history" && git pull --rebase && git push)
 
-      - name: Keep scripts and videos from a dry run
-        if: ${{ inputs.mode == 'dry-run' }}
+      - name: Keep the videos from a dry run / selftest
+        if: ${{ inputs.mode == 'dry-run' || inputs.mode == 'selftest' }}
         uses: actions/upload-artifact@v4
         with:
-          name: dry-run-output
-          path: out/**/final.mp4
-          retention-days: 3
-
-      - name: Keep scripts for debugging
-        if: failure()
-        uses: actions/upload-artifact@v4
-        with:
-          name: debug-scripts
-          path: out/**/script.json
+          name: preview-videos
+          path: out/**/*.mp4
           retention-days: 3
