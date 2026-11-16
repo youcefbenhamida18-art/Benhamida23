@@ -1,6 +1,8 @@
-numpy
-requests
-pillow
-google-api-python-client
-google-auth
-edge-tts
+requests==2.31.0
+edge-tts==6.1.12
+moviepy==1.0.3
+imageio-ffmpeg==0.4.9
+Pillow==9.5.0
+google-api-python-client==2.126.0
+google-auth-oauthlib==1.2.0
+google-auth-httplib2==0.2.0
